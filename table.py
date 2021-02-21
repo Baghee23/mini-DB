@@ -166,7 +166,10 @@ class Table:
                 self.data.pop(index)
 
         self._update()
-        print(f"Deleted {len(indexes_to_del)} rows")
+
+        if self._name[:12] != 'stack_table_':
+           print(f"Deleted {len(indexes_to_del)} rows")
+
         # we have to return the deleted indexes, since they will be appended to the insert_stack
         return indexes_to_del
 
@@ -286,6 +289,7 @@ class Table:
         self._update()
 
 
+    
     def _inner_join(self, table_right: Table, condition):
         '''
         Join table (left) with a supplied table (right) where condition is met.
@@ -328,7 +332,6 @@ class Table:
 
         return join_table
 
-
     def show(self, no_of_rows=None, is_locked=False):
         '''
         Pretty print the table
@@ -344,11 +347,63 @@ class Table:
         if self.pk_idx is not None:
             # table has a primary key, add PK next to the appropriate column
             headers[self.pk_idx] = headers[self.pk_idx]+' #PK#'
-        # detect the rows that are no tfull of nones (these rows have been deleted)
+        # detect the rows that are not full of nones (these rows have been deleted)
         # if we dont skip these rows, the returning table has empty rows at the deleted positions
         non_none_rows = [row for row in self.data if any(row)]
+        #non_none_rows = [row for row in self.data if any(row)] + non_none_rows
         # print using tabulate
         print(tabulate(non_none_rows[:no_of_rows], headers=headers)+'\n')
+
+
+    def showTables(self, no_of_rows=None, is_locked=False,non_none_rows2=None):
+        '''
+        Pretty print the table
+        '''
+        # if the table is locked, add locked keyword to title
+        if is_locked:
+            print(f"\n## {self._name} (locked) ##")
+        else:
+            print(f"\n## {self._name} ##")
+
+        # headers -> "column name (column type)"
+        headers = [f'{col} ({tp.__name__})' for col, tp in zip(self.column_names, self.column_types)]
+        if self.pk_idx is not None:
+            # table has a primary key, add PK next to the appropriate column
+            headers[self.pk_idx] = headers[self.pk_idx]+' #PK#'
+            # detect the rows that are not full of nones (these rows have been deleted)
+            # if we dont skip these rows, the returning table has empty rows at the dele
+        print(self.column_names)    
+        non_none_rows = [row for row in self.data if any(row)]
+        non_none_rows=non_none_rows+non_none_rows2
+        #non_none_rows = [row for row in self.data if any(row)] + non_none_rows
+        # print using tabulate
+        print(tabulate(non_none_rows[:no_of_rows], headers=headers)+'\n')
+        
+    # function to return column names    
+    def _getColumnNames(self, no_of_rows=None, is_locked=False):
+        return self.column_names
+
+ 
+    
+    def get_rows_st(self, no_of_rows=None, is_locked=False):
+      
+
+        # detect the rows that are not full of nones (these rows have been deleted)
+        # if we dont skip these rows, the returning table has empty rows at the deleted positions
+        non_none_rows2 = [row for row in self.data if any(row)]
+        #print(non_none_rows2)
+        # print using tabulate
+        return non_none_rows2
+
+
+
+
+    def _getColumnTypes(self, no_of_rows=None, is_locked=False):
+        
+        return self.column_types
+
+
+
 
 
     def _parse_condition(self, condition, join=False):

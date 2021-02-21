@@ -1,0 +1,12 @@
+from pwn import *
+c = bytes.fromhex('73626960647f6b206821204f21254f7d694f7624662065622127234f726927')
+
+
+for i in range(256):
+
+    m = str(xor(c,i),encoding='ISO8859-1')
+
+    if 'crypto' in m:
+
+        print(i)
+        print(m)

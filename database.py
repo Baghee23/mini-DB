@@ -11,7 +11,6 @@ class Database:
     '''
     Database class contains tables.
     '''
-
     def __init__(self, name, load=True):
         self.tables = {}
         self._name = name
@@ -91,11 +90,12 @@ class Database:
 
     def create_table(self, name=None, column_names=None, column_types=None, primary_key=None, load=None):
         '''
-        This method create a new table. This table is saved and can be accessed by
+        This method create a new table. This table is saved and can be aEEessed by
         db_object.tables['table_name']
         or
         db_object.table_name
         '''
+
         self.tables.update({name: Table(name=name, column_names=column_names, column_types=column_types, primary_key=primary_key, load=load)})
         # self._name = Table(name=name, column_names=column_names, column_types=column_types, load=load)
         # check that new dynamic var doesnt exist already
@@ -105,6 +105,57 @@ class Database:
             raise Exception(f'Attribute "{name}" already exists in class "{self.__class__.__name__}".')
         # self.no_of_tables += 1
         print(f'New table "{name}"')
+        #Control the create_stack_table in order to be used only when a new table is built excluding the meta tables.
+        if (name=="meta_length" or name=="meta_locks" or name=="meta_insert_stack" or name=="meta_indexes"):
+            self._update()
+            self.save()
+        else:
+            #Create the stack table every time a new table is created
+            self.create_stack_table(name=name,column_names=column_names,column_types=column_types,primary_key=primary_key,load=load)
+            self._update()
+            self.save()
+
+    #Create insert_stack_table the same time a regular table is created
+    def create_stack_table(self, name=None, column_names=None, column_types=None, primary_key=None, load=None):
+        '''
+        This method create a new stack_table. This table is saved and can be aEEessed by
+        db_object.tables['table_name']
+        or
+        db_object.table_name
+        '''
+        name='stack_table_'+name
+        self.tables.update({name: Table(name=name, column_names=column_names, column_types=column_types, primary_key=primary_key, load=load)})
+        # self._name = Table(name=name, column_names=column_names, column_types=column_types, load=load)
+        # check that new dynamic var doesnt exist already
+        if name not in self.__dir__():
+            setattr(self, name, self.tables[name])
+        else:
+            raise Exception(f'Attribute "{name}" already exists in class "{self.__class__.__name__}".')
+        # self.no_of_tables += 1
+        print(f'New stack_table "{name}"')
+        #create table for select
+        self._update()
+        self.save()
+
+
+
+    def create_select_table(self, name=None, column_names=None, column_types=None, primary_key=None, load=None):
+        '''
+        This method create a new stack_table. This table is saved and can be aEEessed by
+        db_object.tables['table_name']
+        or
+        db_object.table_name
+        '''
+        name='select_table_'+name
+        self.tables.update({name: Table(name=name, column_names=column_names, column_types=column_types, primary_key=primary_key, load=load)})
+        # self._name = Table(name=name, column_names=column_names, column_types=column_types, load=load)
+        # check that new dynamic var doesnt exist already
+        if name not in self.__dir__():
+            setattr(self, name, self.tables[name])
+        else:
+            raise Exception(f'Attribute "{name}" already exists in class "{self.__class__.__name__}".')
+        # self.no_of_tables += 1
+        print(f'New select_table "{name}"')
         self._update()
         self.save()
 
@@ -116,17 +167,19 @@ class Database:
         self.load(self.savedir)
         if self.is_locked(table_name):
             return
-
+      
         self.tables.pop(table_name)
         delattr(self, table_name)
         if os.path.isfile(f'{self.savedir}/{table_name}.pkl'):
             os.remove(f'{self.savedir}/{table_name}.pkl')
         else:
-            print(f'"{self.savedir}/{table_name}.pkl" does not exist.')
-        self.delete('meta_locks', f'table_name=={table_name}')
-        self.delete('meta_length', f'table_name=={table_name}')
-        self.delete('meta_insert_stack', f'table_name=={table_name}')
+              print(f'"{self.savedir}/{table_name}.pkl" does not exist.')
+              self.delete('meta_locks', f'table_name=={table_name}')
+              self.delete('meta_length', f'table_name=={table_name}')
+              self.delete('meta_insert_stack', f'table_name=={table_name}')
 
+        if table_name[:12] != 'stack_table_' and table_name[:13] != 'select_table_': 
+            self.drop_table('stack_table_'+table_name)
         # self._update()
         self.save()
 
@@ -150,14 +203,16 @@ class Database:
                 if column_types is None:
                     column_types = [str for _ in colnames]
                 self.create_table(name=name, column_names=colnames, column_types=column_types, primary_key=primary_key)
+                self.create_stack_table(name=name,column_names=colnames,column_types=column_types,primary_key=primary_key)
                 self.lockX_table(name)
                 first_line = False
                 continue
             self.tables[name]._insert(line.strip('\n').split(','))
-
+      
         self.unlock_table(name)
         self._update()
         self.save()
+     
 
 
     def table_to_csv(self, table_name, filename=None):
@@ -222,6 +277,8 @@ class Database:
         row -> a list of the values that are going to be inserted (will be automatically casted to predifined type)
         lock_load_save -> If false, user need to load, lock and save the states of the database (CAUTION). Usefull for bulk loading
         '''
+        basicTable = table_name
+        table_name='stack_table_'+table_name
         if lock_load_save:
             self.load(self.savedir)
             if self.is_locked(table_name):
@@ -232,6 +289,7 @@ class Database:
         insert_stack = self._get_insert_stack_for_table(table_name)
         try:
             self.tables[table_name]._insert(row, insert_stack)
+
         except Exception as e:
             print(e)
             print('ABORTED')
@@ -241,6 +299,33 @@ class Database:
             self.unlock_table(table_name)
             self._update()
             self.save()
+        if self.countLength(table_name) == 10:#when insert stack table=10 push elements in main table
+            self.mergeTables(basicTable)  
+
+
+    def _insertFromStack(self, table_name, row, lock_load_save=True):
+        '''
+        Inserts into table
+
+        table_name -> table's name (needs to exist in database)
+        row -> a list of the values that are going to be inserted (will be automatically casted to predifined type)
+        lock_load_save -> If false, user need to load, lock and save the states of the database (CAUTION). Usefull for bulk loading
+        '''
+        
+        insert_stack = self._get_insert_stack_for_table(table_name)
+        try:
+            self.tables[table_name]._insert(row, insert_stack)
+
+        except Exception as e:
+            print(e)
+            print('ABORTED')
+        # sleep(2)
+        self._update_meta_insert_stack_for_tb(table_name, insert_stack[:-1])
+        if lock_load_save:
+            self.unlock_table(table_name)
+            self._update()
+            self.save()        
+
 
 
     def update(self, table_name, set_value, set_column, condition):
@@ -265,6 +350,7 @@ class Database:
         self._update()
         self.save()
 
+
     def delete(self, table_name, condition):
         '''
         Delete rows of a table where condition is met.
@@ -276,9 +362,10 @@ class Database:
 
                     operatores supported -> (<,<=,==,>=,>)
         '''
+        
         self.load(self.savedir)
         if self.is_locked(table_name):
-            return
+            return    
         self.lockX_table(table_name)
         deleted = self.tables[table_name]._delete_where(condition)
         self.unlock_table(table_name)
@@ -287,10 +374,33 @@ class Database:
         # we need the save above to avoid loading the old database that still contains the deleted elements
         if table_name[:4]!='meta':
             self._add_to_insert_stack(table_name, deleted)
+        
+        # Delete rows from stack table if they exist there, and prevent loop in function via condition
+        if table_name[:12] != 'stack_table_':
+           self.delete('stack_table_'+table_name,condition)
+
         self.save()
 
-    def select(self, table_name, columns, condition=None, order_by=None, asc=False,\
-               top_k=None, save_as=None, return_object=False):
+        
+
+
+    def fill_select_table(self, table_name, no_of_rows=None,no_of_rows2=None):
+        rowsToInsert1 = []
+        rowsToInsert2 = []
+        
+        rowsToInsert1 = self.tables[table_name].get_rows_st(no_of_rows, self.is_locked(table_name))
+        for row in rowsToInsert1:
+            self._insertFromStack('select_table_'+table_name, row)
+
+        rowsToInsert2 = self.tables['stack_table_'+table_name].get_rows_st(no_of_rows2, self.is_locked('stack_table_'+table_name))
+        for row in rowsToInsert2:        
+            self._insertFromStack('select_table_'+table_name, row)
+
+       # self.show_table('select_table_'+table_name)
+
+
+
+    def select(self, table_name, columns, condition=None, order_by=None, asc=False,top_k=None, save_as=None, return_object=False,CC=None):
         '''
         Selects and outputs a table's data where condtion is met.
 
@@ -308,19 +418,37 @@ class Database:
         return_object -> If true, the result will be a table object (usefull for internal usage). Def: False (the result will be printed)
 
         '''
+ 
+        
+        name = table_name
+         
+         
+        if CC == None:
+           no_of_rows=[]
+           columnTypes = self.tables[table_name]._getColumnTypes(no_of_rows, self.is_locked(table_name))
+           columnNames = self.tables[table_name]._getColumnNames(no_of_rows, self.is_locked(table_name))
+          
+           name = 'select_table_'+table_name
+           self.create_select_table(name=table_name,column_names=columnNames,column_types=columnTypes,primary_key=None,load=None)
+           self.fill_select_table(table_name)
+
+
+
+
+
         self.load(self.savedir)
-        if self.is_locked(table_name):
+        if self.is_locked(name):
             return
-        self.lockX_table(table_name)
+        self.lockX_table(name)
         if condition is not None:
             condition_column = split_condition(condition)[0]
-        if self._has_index(table_name) and condition_column==self.tables[table_name].column_names[self.tables[table_name].pk_idx]:
-            index_name = self.select('meta_indexes', '*', f'table_name=={table_name}', return_object=True).index_name[0]
+        if self._has_index('select_table_'+table_name) and condition_column==self.tables['select_table_'+table_name].column_names[self.tables['select_table_'+table_name].pk_idx]:
+            index_name = self.select('meta_indexes', '*', f'table_name=={name}',return_object=True,CC=1).index_name[0]
             bt = self._load_idx(index_name)
-            table = self.tables[table_name]._select_where_with_btree(columns, bt, condition, order_by, asc, top_k)
+            table = self.tables['select_table_'+table_name]._select_where_with_btree(columns, bt, condition, order_by, asc, top_k)
         else:
-            table = self.tables[table_name]._select_where(columns, condition, order_by, asc, top_k)
-        self.unlock_table(table_name)
+            table = self.tables[name]._select_where(columns, condition, order_by, asc, top_k)
+        self.unlock_table(name)
         if save_as is not None:
             table._name = save_as
             self.table_from_object(table)
@@ -328,19 +456,105 @@ class Database:
             if return_object:
                 return table
             else:
+               # self.show_table(table_name)
                 table.show()
 
+        if CC == None:
+            self.drop_table(name)        
+
+
+
+
+
+    #A SIMPLE SHOW TABLE
     def show_table(self, table_name, no_of_rows=None):
         '''
         Print a table using a nice tabular design (tabulate)
 
         table_name -> table's name (needs to exist in database)
         '''
+
         self.load(self.savedir)
         if self.is_locked(table_name):
             return
-        self.tables[table_name].show(no_of_rows, self.is_locked(table_name))
 
+        self.tables[table_name].showTables(no_of_rows, self.is_locked(table_name),self.tables['stack_table_'+table_name].get_rows_st(no_of_rows, self.is_locked('stack_table_'+table_name)))
+         
+
+    #merge stacktable and basic table and then clear stacktable
+    def mergeTables(self, table_name, no_of_rows=None):
+        rowsToInsert = []
+        rowsToInsert = self.tables['stack_table_'+table_name].get_rows_st(no_of_rows, self.is_locked('stack_table_'+table_name))
+        for row in rowsToInsert:
+            self._insertFromStack(table_name, row)
+                   
+        columnNames = self.tables['stack_table_'+table_name]._getColumnNames(no_of_rows, self.is_locked('stack_table_'+table_name))
+
+        #clear stack table  
+        for row in rowsToInsert:
+            self.delete('stack_table_'+table_name,columnNames[0]+'=='+row[0]) 
+
+        #sort table
+        self.sort(table_name,columnNames[0],True)    
+             
+
+
+    #BINARY SEARCH
+    def binary_search(self,table_name,column_name,element):
+        no_of_rows=[]
+        non_none_rows=self.tables[table_name].get_rows_st(no_of_rows, self.is_locked(table_name))
+        non_none_rows=self.tables['stack_table_'+table_name].get_rows_st(no_of_rows, self.is_locked('stack_table_'+table_name))+non_none_rows
+        columnNames = self.tables[table_name]._getColumnNames(no_of_rows, self.is_locked(table_name))
+        EE=""
+        p=-1
+        for i in (columnNames):
+            p+=1
+            if (i==column_name):
+                EE=i
+                break
+        if (EE==""):
+            print(column_name+" doesn't exist in table "+table_name+"!")
+        else:
+            non2=[]
+            for i in non_none_rows:
+                non2.append(i[p])
+
+            non2.sort()   
+
+                
+            self.binary_search_recursive(non2,element,0,len(non2)-1)
+
+
+    
+    def binary_search_recursive(self,bothTables,element,start,end):
+       
+        if start > end:
+            print('element does not exist')
+            return -1
+
+        mid = (end + start) // 2
+  
+        if element == bothTables[mid]:
+            print('the sorted list by the given column name returns position index '+ str(mid))
+            return 1
+        if element < bothTables[mid]:
+            return self.binary_search_recursive(bothTables,element,start,mid-1)    
+        else:
+            return self.binary_search_recursive(bothTables,element,mid+1,end) 
+
+
+
+    #count tables length
+    def countLength(self, table_name, no_of_rows=None):
+        rowsToInsert = []
+        rowsToInsert = self.tables[table_name].get_rows_st(no_of_rows, self.is_locked(table_name))
+        i=-1
+        for row in rowsToInsert:
+            i=i+1        
+        return i    
+        
+
+    
     def sort(self, table_name, column_name, asc=False):
         '''
         Sorts a table based on a column
@@ -419,12 +633,13 @@ class Database:
         if table_name[:4]=='meta':  # meta tables will never be locked (they are internal)
             return False
 
+     
         with open(f'{self.savedir}/meta_locks.pkl', 'rb') as f:
             self.tables.update({'meta_locks': pickle.load(f)})
             self.meta_locks = self.tables['meta_locks']
 
         try:
-            res = self.select('meta_locks', ['locked'], f'table_name=={table_name}', return_object=True).locked[0]
+            res = self.select('meta_locks', ['locked'], f'table_name=={table_name}', return_object=True,CC=1).locked[0]
             if res:
                 print(f'Table "{table_name}" is currently locked.')
             return res
